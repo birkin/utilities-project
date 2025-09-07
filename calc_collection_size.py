@@ -52,6 +52,19 @@ SEARCH_BASE = 'https://repository.library.brown.edu/api/search/'
 FIELDS: list[str] = ['pid', 'object_size_lsi', 'fed_object_size_lsi']
 
 
+def fetch_collection_title_via_collection_api(client, collection_pid: str) -> str | None:
+    ## fetches the collection's title using the collection api
+    url: str = f'https://repository.library.brown.edu/api/collections/{collection_pid}/'
+    r: httpx.Response = client.get(url, timeout=30)
+    if r.status_code == 403:
+        return None
+    r.raise_for_status()
+    data: dict[str, Any] = r.json()
+    title: str | None = data.get('name') or data.get('primary_title')
+    log.debug(f'title: ``{title}``')
+    return title
+
+
 ## -- secondary helper functions ------------------------------------
 
 
@@ -149,13 +162,15 @@ def iter_collection_docs(
 ## -- primary helper functions --------------------------------------
 
 
-def print_results(collection_pid: str, results: dict[str, int]) -> None:
+def print_results(collection_pid: str, results: dict[str, int], collection_title: str | None = None) -> None:
     """
     Prints a human-friendly summary of the collection size results.
 
     Called by `main()`.
     """
     print(f'Collection: {collection_pid}')
+    if collection_title:
+        print(f'Title: {collection_title}')
     print(f'Items found: {results["num_found"]}')
     print(f'Items with size counted: {results["counted"]}')
     if results['missing']:
@@ -227,7 +242,10 @@ def main() -> int:
     rows: int = args.rows
     ## output results -----------------------------------------------
     results = calculate_size(collection_pid, rows)
-    print_results(collection_pid, results)
+    # fetch title separately to preserve separation-of-concerns (collections API)
+    with httpx.Client(headers={'Accept': 'application/json'}) as client:
+        collection_title = fetch_collection_title_via_collection_api(client, collection_pid)
+    print_results(collection_pid, results, collection_title)
     return 0
 
 
