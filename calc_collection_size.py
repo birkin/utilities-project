@@ -7,7 +7,7 @@
 
 
 """
-Computes total byte-size for a BDR collection.
+Computes total byte-size for a BDR collection and returns the size in both bytes and human-readable form.
 
 Usage:
   uv run ./calc_collection_size.py --collection-pid bdr:bwehb8b8
