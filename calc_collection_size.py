@@ -21,10 +21,9 @@ Tweak page-size if desired (API typically caps at <= 500):
 
 import argparse
 import logging
-import math
 import os
 import sys
-from collections.abc import Generator, Iterable
+from collections.abc import Generator
 from typing import Any
 
 import httpx
@@ -55,12 +54,25 @@ def human_bytes(n: int) -> str:
     """
     if n < 1024:
         return f'{n} B'
-    units = ['KB', 'MB', 'GB', 'TB', 'PB', 'EB']
-    i = int(math.floor(math.log(n, 1024)))
-    i = max(0, min(i, len(units)))  # clamp
-    val = n / (1024 ** (i + 1))
-    unit = units[i] if i < len(units) else 'EB'
-    return f'{val:.2f} {unit}'
+
+    # Choose the next lower unit below the threshold
+    # < 1 MB -> show KB; < 1 GB -> show MB; < 1 TB -> show GB; etc.
+    thresholds = [
+        (1024 ** 2, 'KB', 1),  # up to MB threshold, show KB
+        (1024 ** 3, 'MB', 2),  # up to GB threshold, show MB
+        (1024 ** 4, 'GB', 3),  # up to TB threshold, show GB
+        (1024 ** 5, 'TB', 4),  # up to PB threshold, show TB
+        (1024 ** 6, 'PB', 5),  # up to EB threshold, show PB
+    ]
+
+    for upper, unit, power in thresholds:
+        if n < upper:
+            val = n / (1024 ** power)
+            return f'{val:.2f} {unit}'
+
+    # For extremely large values (>= 1 EB), show EB
+    val = n / (1024 ** 6)
+    return f'{val:.2f} EB'
 
 
 def fetch_search_page(
@@ -122,10 +134,12 @@ def iter_collection_docs(
     first = first_page or fetch_search_page(client, collection_pid, 0, rows)
     response = first.get('response', {})
     num_found = int(response.get('numFound', 0))
+    log.debug(f'num_found, ``{num_found}``')
     docs = response.get('docs', [])
     yield from docs
     start = rows
     while start < num_found:
+        log.debug(f'start, ``{start}``')
         page = fetch_search_page(client, collection_pid, start, rows)
         docs = page.get('response', {}).get('docs', [])
         if not docs:
