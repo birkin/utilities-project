@@ -21,6 +21,7 @@ Tweak page-size if desired (API typically caps at <= 500):
 
 import argparse
 import logging
+import math
 import os
 import sys
 from collections.abc import Generator
@@ -32,8 +33,20 @@ log_level_name: str = os.getenv('LOG_LEVEL', 'INFO').upper()
 log_level = getattr(
     logging, log_level_name, logging.INFO
 )  # maps the string name to the corresponding logging level constant; defaults to INFO
-logging.basicConfig(level=log_level)
+logging.basicConfig(
+    level=log_level,
+    format='[%(asctime)s] %(levelname)s [%(module)s-%(funcName)s()::%(lineno)d] %(message)s',
+    datefmt='%d/%b/%Y %H:%M:%S',
+)
 log = logging.getLogger(__name__)
+
+
+## prevent httpx from logging
+if log_level <= logging.DEBUG:
+    for noisy in ('httpx', 'httpcore'):
+        lg = logging.getLogger(noisy)
+        lg.setLevel(logging.WARNING)  # or logging.ERROR if you prefer only errors
+        lg.propagate = False  # don't bubble up to root
 
 
 SEARCH_BASE = 'https://repository.library.brown.edu/api/search/'
@@ -58,20 +71,20 @@ def human_bytes(n: int) -> str:
     # Choose the next lower unit below the threshold
     # < 1 MB -> show KB; < 1 GB -> show MB; < 1 TB -> show GB; etc.
     thresholds = [
-        (1024 ** 2, 'KB', 1),  # up to MB threshold, show KB
-        (1024 ** 3, 'MB', 2),  # up to GB threshold, show MB
-        (1024 ** 4, 'GB', 3),  # up to TB threshold, show GB
-        (1024 ** 5, 'TB', 4),  # up to PB threshold, show TB
-        (1024 ** 6, 'PB', 5),  # up to EB threshold, show PB
+        (1024**2, 'KB', 1),  # up to MB threshold, show KB
+        (1024**3, 'MB', 2),  # up to GB threshold, show MB
+        (1024**4, 'GB', 3),  # up to TB threshold, show GB
+        (1024**5, 'TB', 4),  # up to PB threshold, show TB
+        (1024**6, 'PB', 5),  # up to EB threshold, show PB
     ]
 
     for upper, unit, power in thresholds:
         if n < upper:
-            val = n / (1024 ** power)
+            val = n / (1024**power)
             return f'{val:.2f} {unit}'
 
     # For extremely large values (>= 1 EB), show EB
-    val = n / (1024 ** 6)
+    val = n / (1024**6)
     return f'{val:.2f} EB'
 
 
@@ -134,18 +147,24 @@ def iter_collection_docs(
     first = first_page or fetch_search_page(client, collection_pid, 0, rows)
     response = first.get('response', {})
     num_found = int(response.get('numFound', 0))
-    log.debug(f'num_found, ``{num_found}``')
+    total_pages = math.ceil(num_found / rows) if rows > 0 else 0
+    log.debug(f'iter_collection_docs: num_found={num_found}, rows={rows}, expected_pages={total_pages}')
     docs = response.get('docs', [])
+    log.debug(f'iter_collection_docs: page=1 start=0 docs_returned={len(docs)}')
     yield from docs
     start = rows
     while start < num_found:
-        log.debug(f'start, ``{start}``')
+        log.debug(f'iter_collection_docs: fetching page start, ``{start}``')
         page = fetch_search_page(client, collection_pid, start, rows)
         docs = page.get('response', {}).get('docs', [])
+        current_page = (start // rows) + 1  # 0-based offset + 1 for human page index
+        log.debug(f'iter_collection_docs: page={current_page} start={start} docs_returned={len(docs)}')
         if not docs:
+            log.warning('iter_collection_docs: received empty docs list before reaching num_found; stopping pagination')
             break
         yield from docs
         start += rows
+    log.debug(f'iter_collection_docs: finished pagination at start={start} (num_found={num_found})')
     return num_found  # not used directly by caller (generator semantics)
 
 
