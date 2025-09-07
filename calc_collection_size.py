@@ -12,9 +12,6 @@ Computes total byte-size for a BDR collection and returns the size in both bytes
 Usage:
   uv run ./calc_collection_size.py --collection-pid bdr:bwehb8b8
 
-Optional backfill (slower; calls Item API if size is missing in the search doc):
-  uv run ./calc_collection_size.py --collection-pid bdr:bwehb8b8 --backfill-from-item
-
 Tweak page-size if desired (API typically caps at <= 500):
   uv run ./calc_collection_size.py --collection-pid bdr:bwehb8b8 --rows 500
 """
@@ -50,7 +47,6 @@ if log_level <= logging.DEBUG:
 
 
 SEARCH_BASE = 'https://repository.library.brown.edu/api/search/'
-ITEM_BASE = 'https://repository.library.brown.edu/api/items/'
 
 # Hardcoded fields used for search requests
 FIELDS: list[str] = ['pid', 'object_size_lsi', 'fed_object_size_lsi']
@@ -108,23 +104,6 @@ def fetch_search_page(
     r = client.get(SEARCH_BASE, params=params, timeout=30)
     r.raise_for_status()
     return r.json()
-
-
-def fetch_item_size(client: httpx.Client, pid: str) -> int | None:
-    """
-    Retrieves object size for a PID from the Item API as a fallback.
-
-    Called by `calculate_size()`.
-    """
-    url = f'{ITEM_BASE}{pid}/'
-    r = client.get(url, timeout=30)
-    if r.status_code == 403:
-        # private or not found; skip
-        return None
-    r.raise_for_status()
-    data = r.json()
-    # prefer object_size_lsi; fall back to fed_object_size_lsi
-    return data.get('object_size_lsi') or data.get('fed_object_size_lsi') or None
 
 
 def iter_collection_docs(
@@ -188,7 +167,6 @@ def print_results(collection_pid: str, results: dict[str, int]) -> None:
 def calculate_size(
     collection_pid: str,
     rows: int,
-    backfill_from_item: bool,
 ) -> dict[str, int]:
     """
     Calculates total bytes for a collection and returns summary stats.
@@ -214,19 +192,7 @@ def calculate_size(
                 total_bytes += int(size)
                 counted += 1
 
-        # optional backfill via Item API for missing sizes
-        if backfill_from_item and missing:
-            # re-scan via search and backfill sizes from Item API for those still missing
-            for d in iter_collection_docs(client, collection_pid, rows):
-                if (d.get('object_size_lsi') or d.get('fed_object_size_lsi')) is None:
-                    pid = d.get('pid')
-                    if not pid:
-                        continue
-                    sz = fetch_item_size(client, pid)
-                    if sz is not None:
-                        total_bytes += int(sz)
-                        counted += 1
-                        missing -= 1
+        # backfill removed; sizes missing in search docs remain missing
 
     return {
         'num_found': num_found,
@@ -238,14 +204,13 @@ def calculate_size(
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """
-    Parses command-line arguments for collection PID, rows, and backfill flag.
+    Parses command-line arguments for collection PID and rows.
 
     Called by `main()`.
     """
     parser = argparse.ArgumentParser(description='Sum total bytes for a BDR collection.')
     parser.add_argument('--collection-pid', type=str, required=True, help='e.g., bdr:bwehb8b8')
     parser.add_argument('--rows', type=int, default=500, help='page size (max usually 500)')
-    parser.add_argument('--backfill-from-item', action='store_true', help='call Item API when size missing')
     return parser.parse_args(argv)
 
 
@@ -260,9 +225,8 @@ def main() -> int:
     ## calculate size -----------------------------------------------
     collection_pid: str = args.collection_pid
     rows: int = args.rows
-    backfill_from_item: bool = args.backfill_from_item
     ## output results -----------------------------------------------
-    results = calculate_size(collection_pid, rows, backfill_from_item)
+    results = calculate_size(collection_pid, rows)
     print_results(collection_pid, results)
     return 0
 
