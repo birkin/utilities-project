@@ -131,7 +131,6 @@ def iter_collection_docs(
     client: httpx.Client,
     collection_pid: str,
     rows: int,
-    *,
     first_page: dict[str, Any] | None = None,
 ) -> Generator[dict[str, Any], None, int]:
     """
