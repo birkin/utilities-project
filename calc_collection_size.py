@@ -39,7 +39,7 @@ log = logging.getLogger(__name__)
 
 
 ## prevent httpx from logging
-if log_level <= logging.DEBUG:
+if log_level <= logging.INFO:
     for noisy in ('httpx', 'httpcore'):
         lg = logging.getLogger(noisy)
         lg.setLevel(logging.WARNING)  # or logging.ERROR if you prefer only errors
@@ -50,19 +50,6 @@ SEARCH_BASE = 'https://repository.library.brown.edu/api/search/'
 
 # Hardcoded fields used for search requests
 FIELDS: list[str] = ['pid', 'object_size_lsi', 'fed_object_size_lsi']
-
-
-def fetch_collection_title_via_collection_api(client, collection_pid: str) -> str | None:
-    ## fetches the collection's title using the collection api
-    url: str = f'https://repository.library.brown.edu/api/collections/{collection_pid}/'
-    r: httpx.Response = client.get(url, timeout=30)
-    if r.status_code == 403:
-        return None
-    r.raise_for_status()
-    data: dict[str, Any] = r.json()
-    title: str | None = data.get('name') or data.get('primary_title')
-    log.debug(f'title: ``{title}``')
-    return title
 
 
 ## -- secondary helper functions ------------------------------------
@@ -145,7 +132,7 @@ def iter_collection_docs(
     yield from docs
     start = rows
     while start < num_found:
-        log.debug(f'iter_collection_docs: fetching page start, ``{start}``')
+        # log.debug(f'iter_collection_docs: fetching page start, ``{start}``')
         page = fetch_search_page(client, collection_pid, start, rows)
         docs = page.get('response', {}).get('docs', [])
         current_page = (start // rows) + 1  # 0-based offset + 1 for human page index
@@ -177,6 +164,23 @@ def print_results(collection_pid: str, results: dict[str, int], collection_title
         print(f'Items still missing size: {results["missing"]}')
     print(f'Total bytes: {results["total_bytes"]}')
     print(f'Human: {human_bytes(results["total_bytes"])}')
+
+
+def fetch_collection_title_via_collection_api(client, collection_pid: str) -> str | None:
+    """
+    Fetches the collection's title using the collection api.
+
+    Called by `main()`.
+    """
+    url: str = f'https://repository.library.brown.edu/api/collections/{collection_pid}/'
+    r: httpx.Response = client.get(url, timeout=30)
+    if r.status_code == 403:
+        return None
+    r.raise_for_status()
+    data: dict[str, Any] = r.json()
+    title: str | None = data.get('name') or data.get('primary_title')
+    log.debug(f'title: ``{title}``')
+    return title
 
 
 def calculate_size(
