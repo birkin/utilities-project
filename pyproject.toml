@@ -1,0 +1,23 @@
+[project]
+name = "birkin-utilities-project"
+version = "0.0.0"
+description = "Allows staff to easily and quickly create and configure webapp-uploader for students."
+readme = "https://github.com/Brown-University-Library/bdr_student_uploader_hub_project/blob/main/README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "beautifulsoup4~=4.13.0",
+    "Django~=5.2.0",
+    "httpx~=0.28.0",
+    "lxml~=6.0.0",
+    "python-dotenv~=1.1.0",
+    "trio~=0.30.0",
+]
+
+[dependency-groups]
+local = []
+staging = [ 
+    "mysqlclient~=2.2.0",  # not yet used on dev, but useful to confirm installation
+    ]
+prod = [ 
+    "mysqlclient~=2.2.0", 
+    ]
