@@ -40,6 +40,9 @@ log = logging.getLogger(__name__)
 SEARCH_BASE = 'https://repository.library.brown.edu/api/search/'
 ITEM_BASE = 'https://repository.library.brown.edu/api/items/'
 
+# Hardcoded fields used for search requests
+FIELDS: list[str] = ['pid', 'object_size_lsi', 'fed_object_size_lsi']
+
 
 ## -- secondary helper functions ------------------------------------
 
@@ -65,7 +68,6 @@ def fetch_search_page(
     collection_pid: str,
     start: int,
     rows: int,
-    fields: Iterable[str],
 ) -> dict[str, Any]:
     """
     Fetches one page of BDR Search API results for a collection.
@@ -76,7 +78,7 @@ def fetch_search_page(
         'q': f'rel_is_member_of_collection_ssim:"{collection_pid}"',
         'rows': rows,
         'start': start,
-        'fl': ','.join(fields),
+        'fl': ','.join(FIELDS),
     }
     r = client.get(SEARCH_BASE, params=params, timeout=30)
     r.raise_for_status()
@@ -104,7 +106,6 @@ def iter_collection_docs(
     client: httpx.Client,
     collection_pid: str,
     rows: int,
-    fields: Iterable[str],
     *,
     first_page: dict[str, Any] | None = None,
 ) -> Generator[dict[str, Any], None, int]:
@@ -116,14 +117,14 @@ def iter_collection_docs(
     ``numFound``). The generator "returns" ``num_found`` via StopIteration.value,
     but typical callers just iterate docs.
     """
-    first = first_page or fetch_search_page(client, collection_pid, 0, rows, fields)
+    first = first_page or fetch_search_page(client, collection_pid, 0, rows)
     response = first.get('response', {})
     num_found = int(response.get('numFound', 0))
     docs = response.get('docs', [])
     yield from docs
     start = rows
     while start < num_found:
-        page = fetch_search_page(client, collection_pid, start, rows, fields)
+        page = fetch_search_page(client, collection_pid, start, rows)
         docs = page.get('response', {}).get('docs', [])
         if not docs:
             break
@@ -160,22 +161,18 @@ def calculate_size(
 
     Returns a dict with keys: num_found, counted, missing, total_bytes.
     """
-    fields = ['pid', 'object_size_lsi', 'fed_object_size_lsi']
-
     total_bytes = 0
     counted = 0
     missing = 0
 
     with httpx.Client(headers={'Accept': 'application/json'}) as client:
         # get first page to learn numFound for reporting
-        first = fetch_search_page(client, collection_pid, 0, rows, fields)
+        first = fetch_search_page(client, collection_pid, 0, rows)
         resp = first.get('response', {})
         num_found = int(resp.get('numFound', 0))
-        
+
         # process all docs via iterator (avoids duplicating pagination logic)
-        for d in iter_collection_docs(
-            client, collection_pid, rows, fields, first_page=first
-        ):
+        for d in iter_collection_docs(client, collection_pid, rows, first_page=first):
             size = d.get('object_size_lsi') or d.get('fed_object_size_lsi')
             if size is None:
                 missing += 1
@@ -186,9 +183,7 @@ def calculate_size(
         # optional backfill via Item API for missing sizes
         if backfill_from_item and missing:
             # re-scan via search and backfill sizes from Item API for those still missing
-            for d in iter_collection_docs(
-                client, collection_pid, rows, ['pid', 'object_size_lsi', 'fed_object_size_lsi']
-            ):
+            for d in iter_collection_docs(client, collection_pid, rows):
                 if (d.get('object_size_lsi') or d.get('fed_object_size_lsi')) is None:
                     pid = d.get('pid')
                     if not pid:
