@@ -116,6 +116,8 @@ def iter_collection_docs(
     avoid a duplicate fetch (useful when the caller already requested it to get
     ``numFound``). The generator "returns" ``num_found`` via StopIteration.value,
     but typical callers just iterate docs.
+
+    Called by `calculate_size()`.
     """
     first = first_page or fetch_search_page(client, collection_pid, 0, rows)
     response = first.get('response', {})
