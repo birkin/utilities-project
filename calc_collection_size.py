@@ -122,6 +122,7 @@ def iter_collection_docs(
 
     Called by `calculate_size()`.
     """
+    ## processes all docs in first search response ------------------
     first = first_page or fetch_search_page(client, collection_pid, 0, rows)
     response = first.get('response', {})
     num_found = int(response.get('numFound', 0))
@@ -129,10 +130,12 @@ def iter_collection_docs(
     log.debug(f'iter_collection_docs: num_found={num_found}, rows={rows}, expected_pages={total_pages}')
     docs = response.get('docs', [])
     log.debug(f'iter_collection_docs: page=1 start=0 docs_returned={len(docs)}')
+    log.debug('about to yield docs')
     yield from docs
+    log.debug('yielded initial docs; about to start pagination')
     start = rows
+    ## processes all docs in subsequent search responses ------------
     while start < num_found:
-        # log.debug(f'iter_collection_docs: fetching page start, ``{start}``')
         page = fetch_search_page(client, collection_pid, start, rows)
         docs = page.get('response', {}).get('docs', [])
         current_page = (start // rows) + 1  # 0-based offset + 1 for human page index
@@ -140,7 +143,9 @@ def iter_collection_docs(
         if not docs:
             log.warning('iter_collection_docs: received empty docs list before reaching num_found; stopping pagination')
             break
+        log.debug('about to yield docs #2')
         yield from docs
+        log.debug('yielded docs #2; about to increment start')
         start += rows
     log.debug(f'iter_collection_docs: finished pagination at start={start} (num_found={num_found})')
     return num_found  # not used directly by caller (generator semantics)
@@ -197,21 +202,21 @@ def calculate_size(
     missing = 0
 
     with httpx.Client(headers={'Accept': 'application/json'}) as client:
-        # get first page to learn numFound for reporting
-        first = fetch_search_page(client, collection_pid, 0, rows)
-        resp = first.get('response', {})
-        num_found = int(resp.get('numFound', 0))
+        ## get first page to learn numFound for reporting
+        first: dict[str, Any] = fetch_search_page(client, collection_pid, 0, rows)
+        resp: dict[str, Any] = first.get('response', {})
+        num_found: int = int(resp.get('numFound', 0))
 
-        # process all docs via iterator (avoids duplicating pagination logic)
+        ## process all docs via iterator (avoids duplicating pagination logic)
         for d in iter_collection_docs(client, collection_pid, rows, first_page=first):
-            size = d.get('object_size_lsi') or d.get('fed_object_size_lsi')
+            log.debug(f'processing doc-pid ``{d.get("pid")}``')
+            size: int | None = d.get('object_size_lsi') or d.get('fed_object_size_lsi')
             if size is None:
                 missing += 1
+                log.debug(f'missing count now, ``{missing}``')
             else:
                 total_bytes += int(size)
                 counted += 1
-
-        # backfill removed; sizes missing in search docs remain missing
 
     return {
         'num_found': num_found,
