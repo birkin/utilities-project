@@ -129,7 +129,7 @@ def iter_collection_docs(
     total_pages = math.ceil(num_found / rows) if rows > 0 else 0
     log.debug(f'iter_collection_docs: num_found={num_found}, rows={rows}, expected_pages={total_pages}')
     docs = response.get('docs', [])
-    log.debug(f'iter_collection_docs: page=1 start=0 docs_returned={len(docs)}')
+    log.info(f'processing: page=1 start=0 docs_returned={len(docs)}')
     log.debug('about to yield docs')
     yield from docs
     log.debug('yielded initial docs; about to start pagination')
@@ -139,7 +139,7 @@ def iter_collection_docs(
         page = fetch_search_page(client, collection_pid, start, rows)
         docs = page.get('response', {}).get('docs', [])
         current_page = (start // rows) + 1  # 0-based offset + 1 for human page index
-        log.debug(f'iter_collection_docs: page={current_page} start={start} docs_returned={len(docs)}')
+        log.info(f'processing: page={current_page}, start={start} docs_returned={len(docs)}')
         if not docs:
             log.warning('iter_collection_docs: received empty docs list before reaching num_found; stopping pagination')
             break
@@ -160,6 +160,7 @@ def print_results(collection_pid: str, results: dict[str, int], collection_title
 
     Called by `main()`.
     """
+    print(' ')
     print(f'Collection: {collection_pid}')
     if collection_title:
         print(f'Title: {collection_title}')
@@ -206,6 +207,7 @@ def calculate_size(
         first: dict[str, Any] = fetch_search_page(client, collection_pid, 0, rows)
         resp: dict[str, Any] = first.get('response', {})
         num_found: int = int(resp.get('numFound', 0))
+        log.info(f'num_found: {num_found}')
 
         ## process all docs via iterator (avoids duplicating pagination logic)
         for d in iter_collection_docs(client, collection_pid, rows, first_page=first):
