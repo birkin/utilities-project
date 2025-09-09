@@ -15,8 +15,8 @@ Usage:
     ...specifically:
     $ uv run ./load_gsheet_data.py --sheet_id 1qXEqjk56TDF6Zupwqsb-bFrS8G4kS8GXSVzo3-PiZlQ --gid 0
 
-    (that's a publich gsheet with dummy data)
-    
+    (that's a public examplegsheet with dummy data)
+
 Notes...
 - assumes `uv` is installed <https://docs.astral.sh/uv/>.
 - no need for a venv due to the PEP-723 inline-script-metadata that `uv` can use.
