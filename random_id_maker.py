@@ -3,11 +3,11 @@
 # ///
 
 """
-Generates a secure unique ID
+Generates a random ID without confusing characters (e.g., 'O' and '0')
 
 Usage:
-    uv run ./secure_id_maker.py  # default length is 10
-    uv run ./secure_id_maker.py --length 20
+    uv run ./random_id_maker.py  # default length is 10
+    uv run ./random_id_maker.py --length 20
 
 Uniqueness:
 The results below answer the question of how many IDs of a given length one can generate,
@@ -55,7 +55,7 @@ def generate_id_secure(length: int = 10) -> str:
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Generate a secure unique ID')
+    parser = argparse.ArgumentParser(description='Generate a random ID')
     parser.add_argument('-l', '--length', type=int, default=10, help='Length of the generated ID (default: 10)')
     args = parser.parse_args()
 
