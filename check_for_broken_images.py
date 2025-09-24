@@ -21,15 +21,39 @@ Usage:
     uv run check_for_broken_images.py --url https://example.com
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys
 import time
 from urllib.parse import urlparse
 
-from playwright.sync_api import Page, Response, sync_playwright
+from typing import Any, TypedDict
+
+from playwright.sync_api import ElementHandle, Page, Response, sync_playwright
+
+
+class NaturalSize(TypedDict):
+    """Represents the natural width/height of an image element."""
+
+    w: int
+    h: int
+
+
+class DomImgInfo(TypedDict):
+    """Represents DOM-side facts for an <img> element."""
+
+    url: str
+    alt: str
+    dom_ok: bool
+    natural_size: NaturalSize
+
+
+class NetInfo(TypedDict):
+    """Represents salient network response info for an image URL."""
+
+    status: int
+    ok: bool
+    content_type: str
 
 
 def _scroll_page(page: Page, max_scrolls: int = 8, pause_s: float = 0.3) -> None:
@@ -39,7 +63,7 @@ def _scroll_page(page: Page, max_scrolls: int = 8, pause_s: float = 0.3) -> None
         time.sleep(pause_s)
 
 
-def _absolute_img_url(page: Page, img_handle) -> str:
+def _absolute_img_url(page: Page, img_handle: ElementHandle) -> str:
     """Returns an absolute URL for an <img> (prefers currentSrc)."""
     return page.evaluate(
         """
@@ -52,16 +76,16 @@ def _absolute_img_url(page: Page, img_handle) -> str:
     )
 
 
-def _collect_dom_img_info(page: Page, selector: str) -> list[dict]:
+def _collect_dom_img_info(page: Page, selector: str) -> list[DomImgInfo]:
     """Collects DOM-side facts for each <img> matching selector."""
-    imgs = page.query_selector_all(selector)
-    out: list[dict] = []
+    imgs: list[ElementHandle] = page.query_selector_all(selector)
+    out: list[DomImgInfo] = []
     for img in imgs:
         ok: bool = page.evaluate('el => el.complete && el.naturalWidth > 0', img)
         width: int = page.evaluate('el => el.naturalWidth', img)
         height: int = page.evaluate('el => el.naturalHeight', img)
-        alt = img.get_attribute('alt') or ''
-        src_abs = _absolute_img_url(page, img)
+        alt: str = img.get_attribute('alt') or ''
+        src_abs: str = _absolute_img_url(page, img)
         out.append(
             {
                 'url': src_abs,
@@ -85,19 +109,19 @@ def run(url: str, selector: str, timeout_s: int, headed: bool, json_out: bool) -
         page = context.new_page()
 
         # store image responses as they arrive
-        image_responses: dict[str, dict] = {}
+        image_responses: dict[str, NetInfo] = {}
 
         def on_response(res: Response) -> None:
             try:
-                rtype = res.request.resource_type
+                rtype: str | None = res.request.resource_type
             except Exception:
                 rtype = None
 
-            url_ = res.url
+            url_: str = res.url
             if (rtype == 'image') or urlparse(url_).path.lower().endswith(
                 ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.avif')
             ):
-                headers = {k.lower(): v for k, v in res.headers.items()}
+                headers: dict[str, str] = {k.lower(): v for k, v in res.headers.items()}
                 image_responses[url_] = {
                     'status': res.status,
                     'ok': res.ok,
@@ -116,15 +140,15 @@ def run(url: str, selector: str, timeout_s: int, headed: bool, json_out: bool) -
             pass
         time.sleep(0.4)
 
-        dom_imgs = _collect_dom_img_info(page, selector)
+        dom_imgs: list[DomImgInfo] = _collect_dom_img_info(page, selector)
 
         # build a verdict for each image
-        broken: list[dict] = []
-        inspected: list[dict] = []
+        broken: list[dict[str, Any]] = []
+        inspected: list[dict[str, Any]] = []
 
         for info in dom_imgs:
-            abs_url = info['url']
-            net = image_responses.get(abs_url)
+            abs_url: str = info['url']
+            net: NetInfo | None = image_responses.get(abs_url)
             reasons: list[str] = []
 
             # DOM verdict
@@ -141,7 +165,7 @@ def run(url: str, selector: str, timeout_s: int, headed: bool, json_out: bool) -
                 # could be lazy image never requested (offscreen) or CSS background
                 reasons.append('no-network-response')
 
-            rec = {
+            rec: dict[str, Any] = {
                 'url': abs_url,
                 'alt': info['alt'],
                 'natural_size': info['natural_size'],
@@ -161,7 +185,7 @@ def run(url: str, selector: str, timeout_s: int, headed: bool, json_out: bool) -
         browser.close()
 
     # reporting
-    broken_hard = [
+    broken_hard: list[dict[str, Any]] = [
         r
         for r in broken
         if any(k in r['reasons'] for k in ('dom-not-rendered',))
@@ -169,7 +193,7 @@ def run(url: str, selector: str, timeout_s: int, headed: bool, json_out: bool) -
         or any(rr.startswith('bad-content-type') for rr in r['reasons'])
     ]
     # highlight 429s explicitly
-    broken_429 = [r for r in broken_hard if r.get('net', {}).get('status') == 429]
+    broken_429: list[dict[str, Any]] = [r for r in broken_hard if r.get('net', {}).get('status') == 429]
 
     if json_out:
         print(
@@ -196,7 +220,7 @@ def run(url: str, selector: str, timeout_s: int, headed: bool, json_out: bool) -
         if broken_hard:
             print('\nExamples:')
             for rec in broken_hard[:10]:
-                net = rec.get('net', {})
+                net: dict[str, Any] = rec.get('net', {})
                 print(
                     f'- {rec["url"]} | dom_ok={rec["dom_ok"]} | '
                     f'status={net.get("status")} | ct={net.get("content_type")} | '
@@ -208,7 +232,7 @@ def run(url: str, selector: str, timeout_s: int, headed: bool, json_out: bool) -
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description='Detect non-loaded images (incl. 429s) on a page with Playwright.')
+    p: argparse.ArgumentParser = argparse.ArgumentParser(description='Detect non-loaded images (incl. 429s) on a page with Playwright.')
     p.add_argument('--url', required=True, metavar='URL', help='target page URL (required)')
     p.add_argument(
         '--selector',
@@ -236,9 +260,9 @@ def parse_args() -> argparse.Namespace:
 
 
 if __name__ == '__main__':
-    args = parse_args()
+    args: argparse.Namespace = parse_args()
     try:
-        code = run(
+        code: int = run(
             url=args.url,
             selector=args.selector,
             timeout_s=args.timeout,
