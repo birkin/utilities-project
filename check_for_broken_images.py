@@ -29,13 +29,20 @@ import json
 import sys
 import time
 from typing import Any, TypedDict
-from urllib.parse import urlparse
 
 from playwright.sync_api import ElementHandle, Page, Response, sync_playwright
 
 
+## scrolls page to trigger lazy loading
+def _scroll_page(page: Page, max_scrolls: int = 8, pause_s: float = 0.3) -> None:
+    """Scrolls down in steps to trigger lazy-loading."""
+    for _ in range(max_scrolls):
+        page.evaluate('window.scrollBy(0, Math.floor(window.innerHeight * 0.9));')
+        page.wait_for_timeout(int(pause_s * 1000))
+
+
 class NaturalSize(TypedDict):
-    """Represents the natural width/height of an image element."""
+    """Represents the natural size of an image."""
 
     w: int
     h: int
@@ -58,23 +65,13 @@ class NetInfo(TypedDict):
     content_type: str
 
 
-def _scroll_page(page: Page, max_scrolls: int = 8, pause_s: float = 0.3) -> None:
-    """Scrolls down in steps to trigger lazy-loading."""
-    for _ in range(max_scrolls):
-        page.evaluate('window.scrollBy(0, Math.ceil(window.innerHeight*0.9));')
-        time.sleep(pause_s)
-
-
-def _absolute_img_url(page: Page, img_handle: ElementHandle) -> str:
-    """Returns an absolute URL for an <img> (prefers currentSrc)."""
+def _absolute_img_url(page: Page, img: ElementHandle) -> str:
+    """Returns absolute URL for an <img> using currentSrc/src and document.baseURI."""
+    # prefer currentSrc to account for <source> in <picture>
+    current_src: str | None = page.evaluate('el => el.currentSrc || el.src || ""', img)
     return page.evaluate(
-        """
-        (img) => {
-          const u = img.currentSrc || img.getAttribute('src') || '';
-          try { return new URL(u, document.baseURI).href; } catch { return u; }
-        }
-        """,
-        img_handle,
+        '(u) => new URL(u, document.baseURI).toString()',
+        current_src or '',
     )
 
 
@@ -100,17 +97,48 @@ def _collect_dom_img_info(page: Page, selector: str) -> list[DomImgInfo]:
 
 
 def _looks_like_image_content_type(ct: str | None) -> bool:
+    """Returns whether the content-type looks like an image."""
     return bool(ct) and ct.lower().startswith('image/')
 
 
-def run(url: str, selector: str, timeout_s: int, headed: bool, json_out: bool) -> int:
-    """Main runner that prints a report and returns an exit code."""
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=not headed)
-        context = browser.new_context()
-        page = context.new_page()
+def run(
+    url: str,
+    selector: str,
+    timeout_s: int,
+    headed: bool,
+    json_out: bool,
+    pause_for_human: bool,
+    persist: str | None,
+    engine: str,
+    slow_mo_ms: int,
+    wait_selector: str | None,
+) -> int:
+    """Runs the check, optionally pausing so a human can pass challenges, then reports."""
+    exit_code: int = 0
 
-        # store image responses as they arrive
+    with sync_playwright() as p:
+        # choose engine
+        browser_type = {'chromium': p.chromium, 'firefox': p.firefox, 'webkit': p.webkit}[engine]
+
+        # build a context; persistent profile only supported by Chromium
+        if persist:
+            if engine != 'chromium':
+                raise SystemExit('--persist requires --engine chromium')
+            context = browser_type.launch_persistent_context(
+                persist,
+                headless=not headed,
+                slow_mo=slow_mo_ms if slow_mo_ms > 0 else 0,
+            )
+            page = context.new_page()
+        else:
+            browser = browser_type.launch(
+                headless=not headed,
+                slow_mo=slow_mo_ms if slow_mo_ms > 0 else 0,
+            )
+            context = browser.new_context()
+            page = context.new_page()
+
+        # capture image responses
         image_responses: dict[str, NetInfo] = {}
 
         def on_response(res: Response) -> None:
@@ -118,24 +146,51 @@ def run(url: str, selector: str, timeout_s: int, headed: bool, json_out: bool) -
                 rtype: str | None = res.request.resource_type
             except Exception:
                 rtype = None
-
-            url_: str = res.url
-            if (rtype == 'image') or urlparse(url_).path.lower().endswith(
-                ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.avif')
-            ):
-                headers: dict[str, str] = {k.lower(): v for k, v in res.headers.items()}
-                image_responses[url_] = {
-                    'status': res.status,
-                    'ok': res.ok,
-                    'content_type': headers.get('content-type', ''),
-                }
+            if rtype == 'image':
+                try:
+                    url_abs: str = res.url
+                    status: int = res.status
+                    ok: bool = res.ok
+                    ct_hdr: str | None = res.headers.get('content-type')
+                    image_responses[url_abs] = {
+                        'status': status,
+                        'ok': ok,
+                        'content_type': ct_hdr or '',
+                    }
+                except Exception:
+                    pass
 
         page.on('response', on_response)
 
-        # navigate and give the page a chance to settle
+        # navigate
         page.goto(url, wait_until='domcontentloaded', timeout=timeout_s * 1000)
+
+        # optional wait for a specific selector (eg: viewer container)
+        if wait_selector:
+            try:
+                page.wait_for_selector(wait_selector, timeout=timeout_s * 1000)
+            except Exception:
+                # keep going; we will still inspect whatever loaded
+                pass
+
+        # optional human step to solve Turnstile/login
+        if pause_for_human:
+            if not headed:
+                print('note: --pause-for-human is most useful with --headed')
+            print('\n>>> Pause: solve any Cloudflare Turnstile or login prompts in the browser.')
+            print('>>> When the page content is visible, press Enter here to continue...')
+            try:
+                input()
+            except KeyboardInterrupt:
+                return 2
+
+        # give the page a chance to pull images
+        try:
+            page.wait_for_load_state('networkidle', timeout=2000)
+        except Exception:
+            pass
+
         _scroll_page(page, max_scrolls=10, pause_s=0.25)
-        # a brief idle wait helps capture late image fetches and retries
         try:
             page.wait_for_load_state('networkidle', timeout=2000)
         except Exception:
@@ -144,27 +199,23 @@ def run(url: str, selector: str, timeout_s: int, headed: bool, json_out: bool) -
 
         dom_imgs: list[DomImgInfo] = _collect_dom_img_info(page, selector)
 
-        # build a verdict for each image
-        broken: list[dict[str, Any]] = []
+        # build a verdict per image
         inspected: list[dict[str, Any]] = []
-
         for info in dom_imgs:
             abs_url: str = info['url']
+            # best-effort match against network data (exact URL including query string)
             net: NetInfo | None = image_responses.get(abs_url)
             reasons: list[str] = []
 
-            # DOM verdict
             if not info['dom_ok']:
                 reasons.append('dom-not-rendered')
 
-            # Network verdict (if we saw a response for that URL)
             if net:
                 if net['status'] >= 400:
                     reasons.append(f'http-{net["status"]}')
                 if not _looks_like_image_content_type(net['content_type']):
                     reasons.append(f'bad-content-type:{net["content_type"] or "none"}')
             else:
-                # could be lazy image never requested (offscreen) or CSS background
                 reasons.append('no-network-response')
 
             rec: dict[str, Any] = {
@@ -176,51 +227,36 @@ def run(url: str, selector: str, timeout_s: int, headed: bool, json_out: bool) -
                 'reasons': reasons,
             }
             inspected.append(rec)
-            # treat as broken if either DOM shows not rendered OR network shows a problem
-            is_broken = ('dom-not-rendered' in reasons) or any(
-                r.startswith('http-') or r.startswith('bad-content-type') for r in reasons
+
+        # decide failures
+        broken_hard: list[dict[str, Any]] = []
+        for rec in inspected:
+            reasons = rec['reasons']
+            is_bad_http = any(r.startswith('http-') for r in reasons)
+            is_bad_ct = any(r.startswith('bad-content-type') for r in reasons)
+            is_dom_bad = 'dom-not-rendered' in reasons
+            if is_bad_http or is_bad_ct or is_dom_bad:
+                broken_hard.append(rec)
+
+        # output
+        if json_out:
+            print(
+                json.dumps(
+                    {
+                        'checked_url': url,
+                        'selector': selector,
+                        'count_dom': len(dom_imgs),
+                        'broken_hard': broken_hard,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
             )
-            # also consider totally missing response suspicious if the element is in DOM
-            if is_broken or ('no-network-response' in reasons):
-                broken.append(rec)
-
-        browser.close()
-
-    # reporting
-    broken_hard: list[dict[str, Any]] = [
-        r
-        for r in broken
-        if any(k in r['reasons'] for k in ('dom-not-rendered',))
-        or any(rr.startswith('http-') for rr in r['reasons'])
-        or any(rr.startswith('bad-content-type') for rr in r['reasons'])
-    ]
-    # highlight 429s explicitly
-    broken_429: list[dict[str, Any]] = [r for r in broken_hard if r.get('net', {}).get('status') == 429]
-
-    if json_out:
-        print(
-            json.dumps(
-                {
-                    'url': url,
-                    'selector': selector,
-                    'total_imgs': len(dom_imgs),
-                    'broken_count': len(broken_hard),
-                    'broken_429_count': len(broken_429),
-                    'broken': broken_hard,
-                },
-                indent=2,
-                ensure_ascii=False,
-            )
-        )
-    else:
-        print(f'Checked: {url}')
-        print(f'Selector: {selector}')
-        print(f'Total <img> elements found: {len(dom_imgs)}')
-        print(f'Broken images (hard failures): {len(broken_hard)}')
-        if broken_429:
-            print(f'  …of which 429s: {len(broken_429)}')
-        if broken_hard:
-            print('\nExamples:')
+        else:
+            print(f'Checked: {url}')
+            print(f'Selector: {selector}')
+            print(f'Total <img> elements found: {len(dom_imgs)}')
+            print(f'Broken images (hard failures): {len(broken_hard)}')
             for rec in broken_hard[:10]:
                 net: dict[str, Any] = rec.get('net', {})
                 print(
@@ -229,11 +265,20 @@ def run(url: str, selector: str, timeout_s: int, headed: bool, json_out: bool) -
                     f'reasons={",".join(rec["reasons"])}'
                 )
 
-    # non-zero exit on failures so this can gate CI
-    return 1 if broken_hard else 0
+        # non-zero exit on failures so this can gate CI
+        exit_code = 1 if broken_hard else 0
+
+        # tidy shutdown
+        try:
+            context.close()
+        except Exception:
+            pass
+
+    return exit_code
 
 
 def parse_args() -> argparse.Namespace:
+    """Parses CLI args."""
     p: argparse.ArgumentParser = argparse.ArgumentParser(
         description='Detect non-loaded images (incl. 429s) on a page with Playwright.'
     )
@@ -241,24 +286,51 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         '--selector',
         default='img',
-        help='CSS selector for images to check (optional, default: img)',
+        help='CSS selector for images to check (default: img)',
     )
     p.add_argument(
         '--timeout',
         type=int,
         default=30,
-        help='navigation timeout seconds (optional, default: 30)',
+        help='navigation timeout seconds (default: 30)',
     )
     p.add_argument(
         '--headed',
         action='store_true',
-        help='run headed (visible browser) for debugging (optional)',
+        help='run with a visible browser window',
     )
     p.add_argument(
-        '--json',
-        dest='json_out',
+        '--pause-for-human',
         action='store_true',
-        help='emit JSON instead of human-readable text (optional)',
+        help='after initial load, pause so a human can solve challenges, then continue',
+    )
+    p.add_argument(
+        '--persist',
+        metavar='DIR',
+        help='Chromium user-data-dir to persist cookies/session (requires --engine chromium)',
+    )
+    p.add_argument(
+        '--engine',
+        choices=['chromium', 'firefox', 'webkit'],
+        default='chromium',
+        help='browser engine to use (default: chromium)',
+    )
+    p.add_argument(
+        '--slow-mo',
+        dest='slow_mo',
+        type=int,
+        default=0,
+        help='milliseconds to slow down actions (default: 0)',
+    )
+    p.add_argument(
+        '--wait-selector',
+        dest='wait_selector',
+        help='optional CSS selector to wait for before scanning (eg: viewer container)',
+    )
+    p.add_argument(
+        '--json-out',
+        action='store_true',
+        help='emit JSON instead of human-readable text',
     )
     return p.parse_args()
 
@@ -272,6 +344,11 @@ if __name__ == '__main__':
             timeout_s=args.timeout,
             headed=args.headed,
             json_out=args.json_out,
+            pause_for_human=args.pause_for_human,
+            persist=args.persist,
+            engine=args.engine,
+            slow_mo_ms=args.slow_mo,
+            wait_selector=args.wait_selector,
         )
         sys.exit(code)
     except KeyboardInterrupt:
