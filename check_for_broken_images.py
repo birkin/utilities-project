@@ -11,11 +11,14 @@ Detects non-loaded images on a page with Playwright <https://github.com/microsof
 
 Usage:
 
+  (`uvx`, used in the first-time-ever usage-examples, is auto installed when `uv` is installed.
+   It creates an ephemeral venv on-the-fly.)
+
   first time ever:
-    uv run -m playwright install && uv run ./check_for_broken_images.py --url https://example.com
+    uvx --from playwright playwright install && uv run ./check_for_broken_images.py --url https://example.com
 
   linux first time ever might require:
-    uv run -m playwright install --with-deps && uv run ./check_for_broken_images.py --url https://example.com
+    uvx --from playwright playwright install --with-deps && uv run ./check_for_broken_images.py --url https://example.com
 
   ongoing usage:
     uv run check_for_broken_images.py --url https://example.com
@@ -25,9 +28,8 @@ import argparse
 import json
 import sys
 import time
-from urllib.parse import urlparse
-
 from typing import Any, TypedDict
+from urllib.parse import urlparse
 
 from playwright.sync_api import ElementHandle, Page, Response, sync_playwright
 
@@ -232,7 +234,9 @@ def run(url: str, selector: str, timeout_s: int, headed: bool, json_out: bool) -
 
 
 def parse_args() -> argparse.Namespace:
-    p: argparse.ArgumentParser = argparse.ArgumentParser(description='Detect non-loaded images (incl. 429s) on a page with Playwright.')
+    p: argparse.ArgumentParser = argparse.ArgumentParser(
+        description='Detect non-loaded images (incl. 429s) on a page with Playwright.'
+    )
     p.add_argument('--url', required=True, metavar='URL', help='target page URL (required)')
     p.add_argument(
         '--selector',
