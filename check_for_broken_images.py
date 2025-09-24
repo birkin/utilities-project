@@ -7,10 +7,18 @@
 
 
 """
-Detects non-loaded images on a page with Playwright.
+Detects non-loaded images on a page with Playwright <https://github.com/microsoft/playwright>.
 
 Usage:
-  uv run check_for_broken_images.py --url https://example.com --selector img
+
+  first time ever:
+    uv run -m playwright install && uv run ./check_for_broken_images.py --url https://example.com
+
+  linux first time ever might require:
+    uv run -m playwright install --with-deps && uv run ./check_for_broken_images.py --url https://example.com
+
+  ongoing usage:
+    uv run check_for_broken_images.py --url https://example.com
 """
 
 from __future__ import annotations
@@ -201,28 +209,28 @@ def run(url: str, selector: str, timeout_s: int, headed: bool, json_out: bool) -
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description='Detect non-loaded images (incl. 429s) on a page with Playwright.')
-    p.add_argument('--url', help='target page url')
+    p.add_argument('--url', required=True, metavar='URL', help='target page URL (required)')
     p.add_argument(
         '--selector',
         default='img',
-        help='CSS selector for images to check (default: img)',
+        help='CSS selector for images to check (optional, default: img)',
     )
     p.add_argument(
         '--timeout',
         type=int,
         default=30,
-        help='navigation timeout seconds (default: 30)',
+        help='navigation timeout seconds (optional, default: 30)',
     )
     p.add_argument(
         '--headed',
         action='store_true',
-        help='run headed (visible browser) for debugging',
+        help='run headed (visible browser) for debugging (optional)',
     )
     p.add_argument(
         '--json',
         dest='json_out',
         action='store_true',
-        help='emit json instead of human-readable text',
+        help='emit JSON instead of human-readable text (optional)',
     )
     return p.parse_args()
 
