@@ -29,8 +29,9 @@ llm_code_directives = [
   "keep main() as simple as possible; delegate to helper functions",
   "for tests, use standard unittest framework, not pytest",
   "to run tests, always use `uv`; example: `uv run -m unittest discover -v`",
+  "use `uv` to run all code and scripts; do not invoke `python` or `python3` directly; example: `uv run ./the_script.py`",
   "use httpx for all HTTP calls",
   "don't use functions within functions",
   "prefer single-return functions",
-  "use present-tense triple-quoted function docstrings -- example: \"\"\"\nParses... (not Parse...)\n\"\"\""
+  "use present-tense triple-quoted function docstrings; opening and closing triple quotes on their own lines; example: \"\"\"\nParses... (not Parse...)\n\"\"\""
 ]
