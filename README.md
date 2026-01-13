@@ -3,7 +3,7 @@
 
 ## Purpose
 
-To assemble a collection of little utilities to be able to run via [uv](https://docs.astral.sh/uv/).
+To assemble a collection of little utilities to be able to run via [uv](https://docs.astral.sh/uv/), via <https://birkin.github.io/utilities-project/>.
 
 
 ## Usage
