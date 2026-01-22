@@ -44,7 +44,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         '--timeout_seconds',
         type=float,
         default=30.0,
-        help='HTTP timeout in seconds (only applies to --in_url). Default: 30.',
+        help='HTTP timeout in seconds (only applies to --url). Default: 30.',
     )
     parser.add_argument(
         '--output_format',
