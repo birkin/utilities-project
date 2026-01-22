@@ -190,7 +190,7 @@ def fetch_html_rendered_playwright(
             raise RuntimeError(
                 f'Playwright browser binary is missing.\n'
                 f'Run this once to install {browser_name}:\n'
-                f'  uv run playwright install {browser_name}'
+                f'  uv run --with playwright playwright install {browser_name}'
             ) from exc
         raise
 
