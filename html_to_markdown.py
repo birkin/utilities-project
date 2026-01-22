@@ -155,34 +155,44 @@ def fetch_html_rendered_playwright(
     html: str = ''
     final_url: str = url
 
-    with sync_playwright() as pw:
-        if browser_name == 'chromium':
-            browser_type = pw.chromium
-        elif browser_name == 'firefox':
-            browser_type = pw.firefox
-        else:
-            browser_type = pw.webkit
+    try:
+        with sync_playwright() as pw:
+            if browser_name == 'chromium':
+                browser_type = pw.chromium
+            elif browser_name == 'firefox':
+                browser_type = pw.firefox
+            else:
+                browser_type = pw.webkit
 
-        browser = browser_type.launch(headless=not headed)
-        if user_agent:
-            context = browser.new_context(user_agent=user_agent)
-        else:
-            context = browser.new_context()
+            browser = browser_type.launch(headless=not headed)
+            if user_agent:
+                context = browser.new_context(user_agent=user_agent)
+            else:
+                context = browser.new_context()
 
-        page = context.new_page()
-        page.goto(url, wait_until=wait_until, timeout=timeout_ms)
+            page = context.new_page()
+            page.goto(url, wait_until=wait_until, timeout=timeout_ms)
 
-        if wait_for_selector:
-            page.wait_for_selector(wait_for_selector, timeout=timeout_ms)
+            if wait_for_selector:
+                page.wait_for_selector(wait_for_selector, timeout=timeout_ms)
 
-        if extra_wait_ms > 0:
-            page.wait_for_timeout(extra_wait_ms)
+            if extra_wait_ms > 0:
+                page.wait_for_timeout(extra_wait_ms)
 
-        html = page.content()
-        final_url = page.url
+            html = page.content()
+            final_url = page.url
 
-        context.close()
-        browser.close()
+            context.close()
+            browser.close()
+    except Exception as exc:  # noqa: BLE001
+        error_msg: str = str(exc)
+        if "Executable doesn't exist" in error_msg or 'browser binary' in error_msg.lower():
+            raise RuntimeError(
+                f'Playwright browser binary is missing.\n'
+                f'Run this once to install {browser_name}:\n'
+                f'  uv run playwright install {browser_name}'
+            ) from exc
+        raise
 
     return html, final_url
 
