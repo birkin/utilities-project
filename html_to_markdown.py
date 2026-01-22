@@ -1,4 +1,10 @@
-#!/usr/bin/env python3
+# /// script
+# requires-python = "==3.12.*"
+# dependencies = [
+#   "pypandoc-binary",
+#   "httpx"
+# ]
+# ///
 """
 Converts HTML input (URL or local file) to Markdown using Pandoc via pypandoc.
 """
