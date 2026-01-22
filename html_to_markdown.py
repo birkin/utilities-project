@@ -139,10 +139,10 @@ def run(args: argparse.Namespace) -> int:
 
     try:
         html: str = ''
-        if args.in_url:
-            html = fetch_html(url=args.in_url, timeout_seconds=float(args.timeout_seconds))
+        if args.url:
+            html = fetch_html(url=args.url, timeout_seconds=float(args.timeout_seconds))
         else:
-            in_path: Path = Path(args.in_html)
+            in_path: Path = Path(args.html_path)
             if not in_path.exists():
                 raise FileNotFoundError(f'Input HTML file does not exist: {in_path}')
             html = read_html_file(in_path)
