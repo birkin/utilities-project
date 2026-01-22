@@ -60,16 +60,14 @@ Converts HTML input (URL or local file) to Markdown using Pandoc via pypandoc. P
 Example:
 ```
 uv run https://birkin.github.io/utilities-project/html_to_markdown.py \
---in_url 'https://lib.brown.edu' \
---out_markdown '~/brown_lib_home_page.md'
+--in_url 'https://lib.brown.edu'
 ```
 
 ...or...
 
 ```
 uv run https://birkin.github.io/utilities-project/html_to_markdown.py \
---in_html '~/brown_lib_home_page.html' \
---out_markdown '~/brown_lib_home_page.md'
+--in_html '~/brown_lib_home_page.html'
 ```
 
 [Code](https://github.com/birkin/utilities-project/blob/main/html_to_markdown.py)

@@ -41,12 +41,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
 
     parser.add_argument(
-        '--out_markdown',
-        type=Path,
-        required=True,
-        help='Path to write output Markdown.',
-    )
-    parser.add_argument(
         '--timeout_seconds',
         type=float,
         default=30.0,
@@ -112,14 +106,6 @@ def read_html_file(path: Path) -> str:
     return html
 
 
-def ensure_parent_dir(path: Path) -> None:
-    """
-    Ensures the parent directory of a path exists.
-    """
-    parent: Path = path.parent
-    parent.mkdir(parents=True, exist_ok=True)
-
-
 def convert_html_to_markdown(html: str, output_format: str) -> str:
     """
     Converts HTML to Markdown using Pandoc via pypandoc.
@@ -131,14 +117,6 @@ def convert_html_to_markdown(html: str, output_format: str) -> str:
         format='html',
     )
     return markdown
-
-
-def write_text(path: Path, content: str) -> None:
-    """
-    Writes text content to a file.
-    """
-    ensure_parent_dir(path)
-    path.write_text(content, encoding='utf-8')
 
 
 def run(args: argparse.Namespace) -> int:
@@ -158,9 +136,7 @@ def run(args: argparse.Namespace) -> int:
             html = read_html_file(in_path)
 
         markdown: str = convert_html_to_markdown(html=html, output_format=str(args.output_format))
-        write_text(path=Path(args.out_markdown), content=markdown)
-
-        LOGGER.info('Wrote Markdown to %s', Path(args.out_markdown))
+        print(markdown)
     except httpx.HTTPError as exc:
         LOGGER.error('HTTP error: %s', exc)
         exit_code = 1
