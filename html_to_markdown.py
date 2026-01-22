@@ -30,12 +30,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
     input_group: argparse._MutuallyExclusiveGroup = parser.add_mutually_exclusive_group(required=True)
     input_group.add_argument(
-        '--in_url',
+        '--url',
         type=str,
         help='Input URL to fetch HTML from.',
     )
     input_group.add_argument(
-        '--in_html',
+        '--html_path',
         type=Path,
         help='Path to an input HTML file.',
     )
@@ -129,19 +129,6 @@ def convert_html_to_markdown(html: str, output_format: str) -> str:
         extra_args=extra_args,
     )
     return markdown
-
-
-# def convert_html_to_markdown(html: str, output_format: str) -> str:
-#     """
-#     Converts HTML to Markdown using Pandoc via pypandoc.
-#     """
-#     markdown: str = ''
-#     markdown = pypandoc.convert_text(
-#         source=html,
-#         to=output_format,
-#         format='html',
-#     )
-#     return markdown
 
 
 def run(args: argparse.Namespace) -> int:
