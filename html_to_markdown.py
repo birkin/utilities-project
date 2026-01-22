@@ -49,8 +49,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         '--output_format',
         type=str,
-        default='gfm',
-        help='Pandoc output format. Default: gfm.',
+        default='gfm-raw_html',
+        help='Pandoc output format. Default: gfm-raw_html (suppresses raw HTML in output).',
     )
     parser.add_argument(
         '--log_level',
@@ -110,13 +110,38 @@ def convert_html_to_markdown(html: str, output_format: str) -> str:
     """
     Converts HTML to Markdown using Pandoc via pypandoc.
     """
+    ## Drop div/span containers (keep contents), and avoid emitting raw HTML in Markdown.
+    input_format: str = 'html-native_divs-native_spans'
+
+    normalized_output_format: str = output_format
+    if '+raw_html' in normalized_output_format:
+        normalized_output_format = normalized_output_format.replace('+raw_html', '-raw_html')
+    if 'raw_html' not in normalized_output_format:
+        normalized_output_format = f'{normalized_output_format}-raw_html'
+
+    extra_args: list[str] = ['--wrap=none']
+
     markdown: str = ''
     markdown = pypandoc.convert_text(
         source=html,
-        to=output_format,
-        format='html',
+        to=normalized_output_format,
+        format=input_format,
+        extra_args=extra_args,
     )
     return markdown
+
+
+# def convert_html_to_markdown(html: str, output_format: str) -> str:
+#     """
+#     Converts HTML to Markdown using Pandoc via pypandoc.
+#     """
+#     markdown: str = ''
+#     markdown = pypandoc.convert_text(
+#         source=html,
+#         to=output_format,
+#         format='html',
+#     )
+#     return markdown
 
 
 def run(args: argparse.Namespace) -> int:
