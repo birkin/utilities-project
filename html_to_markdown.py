@@ -194,7 +194,7 @@ def fetch_html_rendered_playwright(
                 f'...then rerun your original command.'
             ) from exc
         raise
-
+    print(f'html: ``{html}``')
     return html, final_url
 
 
